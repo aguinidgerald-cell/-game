@@ -1,0 +1,200 @@
+-- ========================================================
+-- 🧠 MIND MATCH PRO (GITHUB CLOUD MODULE)
+-- ========================================================
+
+local NexusOS = getgenv().NexusOS
+if not NexusOS then return end
+
+local phoneFrame = NexusOS.phoneFrame
+local db = NexusOS.db
+local saveDatabase = NexusOS.saveDatabase
+local getCurrentUser = NexusOS.getCurrentUser
+local showHome = NexusOS.showHome
+
+local gameFrame = Instance.new("Frame")
+gameFrame.Name = "MindMatchApp"
+gameFrame.Size = UDim2.new(1, 0, 1, -40)
+gameFrame.Position = UDim2.new(0, 0, 0, 30)
+gameFrame.BackgroundTransparency = 1
+gameFrame.Visible = true
+gameFrame.ZIndex = 51
+gameFrame.Parent = phoneFrame
+
+local pointsLabel = Instance.new("TextLabel")
+pointsLabel.Size = UDim2.new(0, 135, 0, 26)
+pointsLabel.Position = UDim2.new(0, 15, 0, 10)
+pointsLabel.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+pointsLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+pointsLabel.TextSize = 10
+pointsLabel.Font = Enum.Font.Code
+pointsLabel.Text = "POINTS: 0"
+pointsLabel.ZIndex = 52
+pointsLabel.Parent = gameFrame
+Instance.new("UICorner", pointsLabel).CornerRadius = UDim.new(0, 6)
+
+local timerLabel = Instance.new("TextLabel")
+timerLabel.Size = UDim2.new(0, 115, 0, 26)
+timerLabel.Position = UDim2.new(1, -130, 0, 10)
+timerLabel.BackgroundColor3 = Color3.fromRGB(40, 25, 45)
+timerLabel.TextColor3 = Color3.fromRGB(255, 100, 150)
+timerLabel.TextSize = 10
+timerLabel.Font = Enum.Font.Code
+timerLabel.Text = "TIME: 0s"
+timerLabel.ZIndex = 52
+timerLabel.Parent = gameFrame
+Instance.new("UICorner", timerLabel).CornerRadius = UDim.new(0, 6)
+
+local gridContainer = Instance.new("Frame")
+gridContainer.Size = UDim2.new(0, 260, 0, 210)
+gridContainer.Position = UDim2.new(0.5, -130, 0, 44)
+gridContainer.BackgroundColor3 = Color3.fromRGB(22, 26, 38)
+gridContainer.BorderSizePixel = 0
+gridContainer.ZIndex = 52
+gridContainer.Parent = gameFrame
+Instance.new("UICorner", gridContainer).CornerRadius = UDim.new(0, 10)
+
+local gridLayout = Instance.new("UIGridLayout")
+gridLayout.CellSize = UDim2.new(0, 58, 0, 62)
+gridLayout.CellPadding = UDim2.new(0, 6, 0, 6)
+gridLayout.StartCorner = Enum.StartCorner.TopLeft
+gridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+gridLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+gridLayout.Parent = gridContainer
+
+local emojis = {"🍎", "🍌", "🍇", "🍊", "🍉", "🍓", "🍎", "🍌", "🍇", "🍊", "🍉", "🍓"}
+local cards = {}
+local firstSelection = nil
+local isChecking = false
+local pairsFound = 0
+local secondsElapsed = 0
+local timerRunning = true
+
+local function shuffleEmojis()
+    math.randomseed(tick())
+    for i = #emojis, 2, -1 do
+        local j = math.random(1, i)
+        emojis[i], emojis[j] = emojis[j], emojis[i]
+    end
+end
+
+local function resetGameCards()
+    shuffleEmojis()
+    pairsFound = 0
+    firstSelection = nil
+    isChecking = false
+    secondsElapsed = 0
+    timerRunning = true
+
+    local currentUser = getCurrentUser()
+    if currentUser and db.users[currentUser] then
+        pointsLabel.Text = "POINTS: " .. (db.users[currentUser].points or 0)
+    end
+
+    for i, cardData in ipairs(cards) do
+        cardData.emoji = emojis[i]
+        cardData.revealed = false
+        cardData.matched = false
+        cardData.button.Text = "❓"
+        cardData.button.BackgroundColor3 = Color3.fromRGB(35, 42, 64)
+        cardData.button.TextColor3 = Color3.fromRGB(150, 180, 255)
+    end
+end
+
+task.spawn(function()
+    while gameFrame and gameFrame.Parent do
+        task.wait(1)
+        if timerRunning then
+            secondsElapsed = secondsElapsed + 1
+            if timerLabel and timerLabel.Parent then
+                timerLabel.Text = "TIME: " .. secondsElapsed .. "s"
+            end
+        end
+    end
+end)
+
+for i = 1, 12 do
+    local cardBtn = Instance.new("TextButton")
+    cardBtn.Size = UDim2.new(0, 58, 0, 62)
+    cardBtn.BackgroundColor3 = Color3.fromRGB(35, 42, 64)
+    cardBtn.TextColor3 = Color3.fromRGB(150, 180, 255)
+    cardBtn.TextSize = 22
+    cardBtn.Font = Enum.Font.GothamBold
+    cardBtn.Text = "❓"
+    cardBtn.AutoButtonColor = false
+    cardBtn.ZIndex = 53
+    cardBtn.Parent = gridContainer
+    Instance.new("UICorner", cardBtn).CornerRadius = UDim.new(0, 8)
+
+    local cardData = {button = cardBtn, emoji = "", revealed = false, matched = false}
+
+    cardBtn.Activated:Connect(function()
+        if isChecking or cardData.revealed or cardData.matched or not timerRunning then return end
+        cardData.revealed = true
+        cardData.button.Text = cardData.emoji
+        cardData.button.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
+        cardData.button.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+        if not firstSelection then
+            firstSelection = cardData
+        else
+            isChecking = true
+            if firstSelection.emoji == cardData.emoji then
+                firstSelection.matched = true
+                cardData.matched = true
+                pairsFound = pairsFound + 1
+                firstSelection = nil
+                isChecking = false
+
+                if pairsFound == 6 then
+                    timerRunning = false
+                    local currentUser = getCurrentUser()
+                    if currentUser and db.users[currentUser] then
+                        db.users[currentUser].points = (db.users[currentUser].points or 0) + 50
+                        saveDatabase(db)
+                        pointsLabel.Text = "🎉 +50 PTS! (Auto-Restart...)"
+                    end
+
+                    task.delay(2, function()
+                        if gameFrame and gameFrame.Parent then resetGameCards() end
+                    end)
+                end
+            else
+                task.delay(0.6, function()
+                    if not firstSelection or not cardData then return end
+                    firstSelection.revealed = false
+                    firstSelection.button.Text = "❓"
+                    firstSelection.button.BackgroundColor3 = Color3.fromRGB(35, 42, 64)
+                    firstSelection.button.TextColor3 = Color3.fromRGB(150, 180, 255)
+
+                    cardData.revealed = false
+                    cardData.button.Text = "❓"
+                    cardData.button.BackgroundColor3 = Color3.fromRGB(35, 42, 64)
+                    cardData.button.TextColor3 = Color3.fromRGB(150, 180, 255)
+
+                    firstSelection = nil
+                    isChecking = false
+                end)
+            end
+        end
+    end)
+    cards[i] = cardData
+end
+
+resetGameCards()
+
+local backToHomeFromGame = Instance.new("TextButton")
+backToHomeFromGame.Size = UDim2.new(1, -40, 0, 32)
+backToHomeFromGame.Position = UDim2.new(0, 20, 1, -45)
+backToHomeFromGame.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+backToHomeFromGame.TextColor3 = Color3.fromRGB(255, 255, 255)
+backToHomeFromGame.TextSize = 11
+backToHomeFromGame.Font = Enum.Font.GothamBold
+backToHomeFromGame.Text = "🏠 HOME SCREEN"
+backToHomeFromGame.ZIndex = 52
+backToHomeFromGame.Parent = gameFrame
+Instance.new("UICorner", backToHomeFromGame).CornerRadius = UDim.new(0, 8)
+
+backToHomeFromGame.Activated:Connect(function()
+    gameFrame:Destroy()
+    showHome()
+end)
