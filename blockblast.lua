@@ -1,5 +1,5 @@
 -- ========================================================
--- 🧱 BLOCK BLAST CLONE (NEXUS OS CLOUD MODULE)
+-- 🧱 BLOCK BLAST CLONE (FIXED MOBILE TOUCH & DROP)
 -- Repository File: blockblast.lua
 -- ========================================================
 
@@ -153,7 +153,6 @@ for i = 1, 3 do
     slotFrames[i] = slot
 end
 
--- Render Board Functions
 local function renderBoard()
     for r = 1, BOARD_SIZE do
         for c = 1, BOARD_SIZE do
@@ -232,26 +231,9 @@ local function clearLines()
     end
 end
 
--- Drag & Drop Interaction
-local activeDrag = nil
-
-local function getCellAtPosition(posX, posY)
-    for r = 1, BOARD_SIZE do
-        for c = 1, BOARD_SIZE do
-            local cell = boardCells[r][c]
-            local pos = cell.AbsolutePosition
-            local size = cell.AbsoluteSize
-            if posX >= pos.X and posX <= pos.X + size.X and posY >= pos.Y and posY <= pos.Y + size.Y then
-                return r, c
-            end
-        end
-    end
-    return nil, nil
-end
-
 local function renderPieceUI(pieceData, parent, cellSize)
     local container = Instance.new("Frame")
-    container.Size = UDim2.new(0, #pieceData.shape[1] * (cellSize + 2), 0, #pieceData.shape * (cellSize + 2))
+    container.Size = UDim2.new(0, #pieceData.shape[1] * (cellSize + 3), 0, #pieceData.shape * (cellSize + 3))
     container.Position = UDim2.new(0.5, -container.Size.X.Offset / 2, 0.5, -container.Size.Y.Offset / 2)
     container.BackgroundTransparency = 1
     container.ZIndex = 54
@@ -262,11 +244,11 @@ local function renderPieceUI(pieceData, parent, cellSize)
             if pieceData.shape[r][c] == 1 then
                 local blk = Instance.new("Frame")
                 blk.Size = UDim2.new(0, cellSize, 0, cellSize)
-                blk.Position = UDim2.new(0, (c - 1) * (cellSize + 2), 0, (r - 1) * (cellSize + 2))
+                blk.Position = UDim2.new(0, (c - 1) * (cellSize + 3), 0, (r - 1) * (cellSize + 3))
                 blk.BackgroundColor3 = pieceData.color
                 blk.ZIndex = 55
                 blk.Parent = container
-                Instance.new("UICorner", blk).CornerRadius = UDim.new(0, 3)
+                Instance.new("UICorner", blk).CornerRadius = UDim.new(0, 4)
             end
         end
     end
@@ -288,6 +270,8 @@ local function checkGameOver()
     return true
 end
 
+local activeDrag = nil
+
 local function spawnPieces()
     local allEmpty = true
     for _, p in ipairs(currentPieces) do
@@ -300,7 +284,7 @@ local function spawnPieces()
             currentPieces[i] = randShape
             slotFrames[i]:ClearAllChildren()
 
-            local pieceUI = renderPieceUI(randShape, slotFrames[i], 12)
+            renderPieceUI(randShape, slotFrames[i], 14)
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1, 0, 1, 0)
             btn.BackgroundTransparency = 1
@@ -312,7 +296,8 @@ local function spawnPieces()
                 if activeDrag then return end
                 slotFrames[i].BackgroundTransparency = 0.8
 
-                local dragVisual = renderPieceUI(randShape, gameFrame, 22)
+                -- Larger draggable preview with finger offset (so it's visible above finger)
+                local dragVisual = renderPieceUI(randShape, gameFrame, 28)
                 dragVisual.ZIndex = 100
 
                 activeDrag = {
@@ -333,33 +318,46 @@ end
 UserInputService.InputChanged:Connect(function(input)
     if activeDrag and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local mPos = input.Position
-        activeDrag.visual.Position = UDim2.new(0, mPos.X - gameFrame.AbsolutePosition.X - 30, 0, mPos.Y - gameFrame.AbsolutePosition.Y - 60)
+        -- Offset upward by 70 pixels so the finger doesn't block vision
+        activeDrag.visual.Position = UDim2.new(0, mPos.X - gameFrame.AbsolutePosition.X - 35, 0, mPos.Y - gameFrame.AbsolutePosition.Y - 80)
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
     if activeDrag and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
         local mPos = input.Position
-        local targetR, targetC = getCellAtPosition(mPos.X, mPos.Y - 30)
+        
+        -- Mathematical Grid Drop Calculation (Super Accurate!)
+        local bPos = boardFrame.AbsolutePosition
+        local relX = mPos.X - bPos.X
+        local relY = (mPos.Y - 80) - bPos.Y -- Account for finger offset
+        
+        local stride = 31 -- cell size (28) + padding (3)
+        local targetC = math.floor(relX / stride) + 1
+        local targetR = math.floor(relY / stride) + 1
 
-        if targetR and targetC and canPlace(activeDrag.data.shape, targetR, targetC) then
-            local shape = activeDrag.data.shape
-            local blocksPlaced = 0
-            for r = 1, #shape do
-                for c = 1, #shape[r] do
-                    if shape[r][c] == 1 then
-                        grid[targetR + r - 1][targetC + c - 1] = activeDrag.data.color
-                        blocksPlaced = blocksPlaced + 1
+        if targetR >= 1 and targetR <= BOARD_SIZE and targetC >= 1 and targetC <= BOARD_SIZE then
+            if canPlace(activeDrag.data.shape, targetR, targetC) then
+                local shape = activeDrag.data.shape
+                local blocksPlaced = 0
+                for r = 1, #shape do
+                    for c = 1, #shape[r] do
+                        if shape[r][c] == 1 then
+                            grid[targetR + r - 1][targetC + c - 1] = activeDrag.data.color
+                            blocksPlaced = blocksPlaced + 1
+                        end
                     end
                 end
-            end
-            addScore(blocksPlaced * 10)
-            renderBoard()
-            clearLines()
+                addScore(blocksPlaced * 10)
+                renderBoard()
+                clearLines()
 
-            activeDrag.slot:ClearAllChildren()
-            currentPieces[activeDrag.index] = nil
-            spawnPieces()
+                activeDrag.slot:ClearAllChildren()
+                currentPieces[activeDrag.index] = nil
+                spawnPieces()
+            else
+                activeDrag.slot.BackgroundTransparency = 1
+            end
         else
             activeDrag.slot.BackgroundTransparency = 1
         end
